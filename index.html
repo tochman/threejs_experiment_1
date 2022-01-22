@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <div id="container"></div>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script type="module">
+      import * as THREE from "./node_modules/three/build/three.module.js";
+
+      const container = document.getElementById("container");
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        1000
+      );
+
+      const renderer = new THREE.WebGLRenderer();
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      container.appendChild(renderer.domElement);
+      let lastMove = [window.innerWidth / 2, window.innerHeight / 2];
+
+      // light
+      const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+      scene.add(ambient);
+
+      const spotLight = new THREE.SpotLight(0xffffff, 0.5);
+      spotLight.position.set(15, 40, 35);
+      spotLight.angle = Math.PI / 4;
+      spotLight.penumbra = 0.1;
+      spotLight.decay = 2;
+      spotLight.distance = 200;
+
+      spotLight.castShadow = true;
+      spotLight.shadow.mapSize.width = 512;
+      spotLight.shadow.mapSize.height = 512;
+      spotLight.shadow.camera.near = 10;
+      spotLight.shadow.camera.far = 200;
+      spotLight.shadow.focus = 1;
+      scene.add(spotLight);
+
+      // curve
+      const addCurve = (start, end, radius, scene) => {
+        // Convert latitude/longitude to XYZ on the globe
+        const startXYZ = toVector(start.lat, start.long, radius);
+        const endXYZ = toVector(end.lat, end.long, radius);
+
+        // D3 interpolates along the great arc that passes
+        // through both the start and end point
+        const d3Interpolate = d3.geoInterpolate(
+          [start.long, start.lat],
+          [end.long, end.lat]
+        );
+        const control1 = d3Interpolate(0.25);
+        const control2 = d3Interpolate(0.75);
+
+        // Set the arc height to half the distance between points
+        const arcHeight = startXYZ.distanceTo(endXYZ) * 0.5 + radius;
+        const controlXYZ1 = toVector(control1[1], control1[0], arcHeight);
+        const controlXYZ2 = toVector(control2[1], control2[0], arcHeight);
+
+        // CubicBezier allows for curves which travel half way
+        // around the globe without penetrating the sphere
+        const curve = new THREE.CubicBezierCurve3(
+          startXYZ,
+          controlXYZ1,
+          controlXYZ2,
+          endXYZ
+        );
+
+        // Arcs are curved tubes with 0.5px radius and 8 sides
+        // Each curve is broken into 44 segments
+        const geometry = new THREE.TubeBufferGeometry(curve, 44, 0.3, 8);
+        const material = new THREE.MeshBasicMaterial({
+          color: "#EF4444",
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+        // Set the draw range to show only the first vertex
+        geometry.setDrawRange(0, 1);
+
+        drawAnimatedLine(geometry, performance.now());
+      };
+
+      // CREATE THE SPHERE
+
+      // Start by creating a texture
+      const texture = new THREE.TextureLoader().load("world_4.png");
+      // immediately use the texture for material creation
+      const material = new THREE.MeshPhongMaterial({
+        map: texture,
+        shininess: 50,
+      });
+
+      // create the sphere geometry
+      const geometry = new THREE.SphereGeometry(2, 64, 64);
+
+      const sphere = new THREE.Mesh(geometry, material);
+      sphere.castShadow = true;
+      scene.add(sphere);
+
+      camera.position.z = 3.5;
+      const animate = () => {
+        requestAnimationFrame(animate);
+        sphere.rotation.x += 0.002;
+        sphere.rotation.y -= 0.002;
+        renderer.render(scene, camera);
+      };
+      const onWindowResize = () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      };
+      const rotateOnMouseMove = (e) => {
+        e = e || window.event;
+        //calculate difference between current and last mouse position
+        const moveX = e.clientX - lastMove[0];
+        const moveY = e.clientY - lastMove[1];
+        //rotate the globe based on distance of mouse moves (x and y)
+        sphere.rotation.y += moveX * 0.001;
+        sphere.rotation.x += moveY * 0.001;
+
+        //store new position in lastMove
+        lastMove[0] = e.clientX;
+        lastMove[1] = e.clientY;
+      };
+
+      // EVENT LISTENERS
+      container.addEventListener("mousemove", rotateOnMouseMove);
+      window.addEventListener("resize", onWindowResize);
+
+      animate();
+    </script>
+  </body>
+</html>
